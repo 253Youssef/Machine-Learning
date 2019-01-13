@@ -1,0 +1,110 @@
+# Define directories of training datasets
+X_train_positive_dir = '/content/gdrive/My Drive/BinaryReID/Data/train/positive' 
+X_train_negative_dir = '/content/gdrive/My Drive/BinaryReID/Data/train/negative'
+
+X_train_positive_files = [f for f in listdir(X_train_positive_dir) if isfile(join(X_train_positive_dir, f))]
+X_train_negative_files = [f for f in listdir(X_train_negative_dir) if isfile(join(X_train_negative_dir, f))]
+
+X_train_size = len(X_train_positive_files) + len(X_train_negative_files)
+
+X_train_list = []
+Y_train_list = []
+
+for file in X_train_positive_files:
+    fileNum = cv2.imread(X_train_positive_dir+'/'+file)
+    X_train_list.append(fileNum)
+    Y_train_list.append(np.ones(1, dtype=int))
+  
+for file in X_train_negative_files:
+    fileNum = cv2.imread(X_train_negative_dir+'/'+file)
+    X_train_list.append(fileNum)
+    Y_train_list.append(np.zeros(1, dtype=int))
+  
+X_train = np.asarray(X_train_list, dtype=np.float32)
+Y_train = np.asarray(Y_train_list, dtype=np.float32)
+
+train_random_indices = np.arange(X_train.shape[0])
+np.random.shuffle(train_random_indices)
+
+X_train = X_train[train_random_indices]
+Y_train = Y_train[train_random_indices]
+
+# Define directories of testing datasets
+X_test_positive_dir = '/content/gdrive/My Drive/BinaryReID/Data/test/positive'
+X_test_negative_dir = '/content/gdrive/My Drive/BinaryReID/Data/test/negative'
+
+
+X_test_positive_files = [f for f in listdir(X_test_positive_dir) if isfile(join(X_test_positive_dir, f))]
+X_test_negative_files = [f for f in listdir(X_test_negative_dir) if isfile(join(X_test_negative_dir, f))]
+
+X_test_size = len(X_test_positive_files) + len(X_test_negative_files)
+
+X_test_list = []
+Y_test_list = []
+
+for file in X_test_positive_files:
+    fileNum = cv2.imread(X_test_positive_dir+'/'+file)
+    X_test_list.append(fileNum)
+    Y_test_list.append(np.ones(1, dtype=int))
+  
+for file in X_test_negative_files:
+    fileNum = cv2.imread(X_test_negative_dir+'/'+file)
+    X_test_list.append(fileNum)
+    Y_test_list.append(np.zeros(1, dtype=int))
+  
+X_test = np.asarray(X_test_list, dtype=np.float32)
+Y_test = np.asarray(Y_test_list, dtype=np.float32)
+
+test_random_indices = np.arange(X_test.shape[0])
+np.random.shuffle(test_random_indices)
+
+X_test = X_test[test_random_indices]
+Y_test = Y_test[test_random_indices]
+
+print('X_train:',X_train.shape)
+print('Y_train:',Y_train.shape)
+print('X_train:',X_test.shape)
+print('Y_test:',Y_test.shape)
+
+X_train_final, X_val, Y_train_final, Y_val = train_test_split(X_train, Y_train, test_size=0.2)
+
+# Create model using the provided createModel() function and load the weights 
+model1 = createModel()
+model1.compile(optimizer='sgd', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+model1.load_weights('/content/gdrive/My Drive/BinaryReID/Weights/weights.hdf5')
+
+# Define batch size and number of epochs
+epochs = 30
+
+train_batch_size = 32
+steps_per_epoch = int(np.ceil(len(X_train_final) / train_batch_size))
+
+test_batch_size  = 16
+validation_steps = int(np.ceil(len(X_val) / test_batch_size))
+
+
+datagen = ImageDataGenerator(
+        samplewise_std_normalization=True, # divide each input by its std.
+        zoom_range=0.2,                    # randomly zoom into images
+        rotation_range=10,                 # randomly rotate images in the range (degrees, 0 to 180)
+        width_shift_range=0.1,             # randomly shift images horizontally (fraction of total width)
+        height_shift_range=0.1,            # randomly shift images vertically (fraction of total height)
+        horizontal_flip=True,              # randomly flip images
+        vertical_flip=False)               # randomly flip images
+
+datagen.fit(X_train_final)
+
+checkpointer = ModelCheckpoint(filepath='/tmp/weights.hdf5', verbose=1, save_best_only=True)
+callbacks_list = [checkpointer]
+
+# Fit the model
+history1 = model1.fit_generator(
+        datagen.flow(X_train_final, Y_train_final, batch_size=train_batch_size),
+        steps_per_epoch = steps_per_epoch, 
+        epochs = epochs, 
+        verbose=1, 
+        validation_data = (X_val, Y_val),
+        validation_steps = validation_steps,
+        callbacks = callbacks_list)
+
+evaluation = model1.evaluate(X_test, Y_test)
